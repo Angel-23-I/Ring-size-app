@@ -1,0 +1,20 @@
+{
+  "name": "ringsize-udes",
+  "private": true,
+  "version": "1.0.0",
+  "description": "RingSize - Calculadora de talla de anillo a partir del diámetro interno (mm). Proyecto examen Ingeniería de Software - Universidad de Santander (UDES).",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.4",
+    "vite": "^6.0.0"
+  }
+}
