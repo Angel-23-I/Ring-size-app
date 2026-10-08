@@ -27,9 +27,12 @@ body {
   font-size: 16px;
 }
 
+/* Mobile-first: en móvil se usa prácticamente el 100% del ancho (16px laterales).
+   El max-width centrado se aplica solo en tablet/desktop (responsive.css). */
 .container {
-  width: min(880px, 92%);
+  width: 100%;
   margin: 0 auto;
+  padding-inline: 16px;
 }
 
 .site-header {
@@ -94,8 +97,10 @@ label { font-weight: 700; }
   border: 2px solid var(--border);
   border-radius: 10px;
   font-size: 1.1rem;
-  min-height: 48px;
+  min-height: 54px;
   width: 100%;
+  background: #fff;
+  color: var(--text);
 }
 .unit {
   display: grid;
@@ -127,9 +132,11 @@ input:focus-visible, button:focus-visible, a:focus-visible, .table-wrapper:focus
   font-size: 1.05rem;
   font-weight: 700;
   cursor: pointer;
-  min-height: 48px;
+  min-height: 52px;
   border: 2px solid transparent;
+  touch-action: manipulation;
 }
+.btn:active { transform: scale(0.98); }
 .btn-primary { background: var(--primary); color: #fff; }
 .btn-primary:hover { background: var(--primary-dark); }
 .btn-secondary { background: #eef2ff; color: #3730a3; border-color: #c7d2fe; }
@@ -145,9 +152,13 @@ input:focus-visible, button:focus-visible, a:focus-visible, .table-wrapper:focus
 .resultado h3 { margin: 0 0 0.3rem; font-size: 1rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
 .talla-grande {
   margin: 0;
-  font-size: 2.6rem;
+  font-size: 3rem;
   font-weight: 900;
   color: var(--primary-dark);
+  line-height: 1.1;
+}
+.resultado .datos dd {
+  font-size: 1.35rem;
 }
 .datos { display: grid; gap: 0.5rem; margin: 0.8rem 0; }
 .datos div {
@@ -179,4 +190,42 @@ tbody tr.selected { background: #f5f3ff; outline: 2px solid var(--primary); outl
   margin-top: 2rem;
   text-align: center;
   font-size: 0.9rem;
+}
+
+/* ============ Móvil 0–699px: app táctil de ancho completo + barra inferior ============ */
+@media (max-width: 699px) {
+  /* Header compacto: conserva logo, título, subtítulo y nav */
+  .site-header { padding: 0.5rem 0; }
+  .header-inner { gap: 0.4rem; }
+  .brand-ring { width: 40px; height: 40px; font-size: 1.5rem; }
+  .brand h1 { font-size: 1.25rem; }
+  .subtitle { font-size: 0.78rem; }
+  nav a { margin-left: 0; padding: 0.65rem 0.6rem; font-size: 0.95rem; }
+
+  /* Cards de ancho completo, densidad móvil */
+  .card { padding: 1rem; margin: 1rem 0; border-radius: 12px; }
+  .card h2 { font-size: 1.2rem; }
+
+  /* Filas de tabla cómodas al tacto; scroll solo interno */
+  .table-wrapper { -webkit-overflow-scrolling: touch; }
+  th, td { padding: 0.8rem 0.6rem; }
+
+  /* Barra inferior fija: reutiliza los mismos botones/handlers del formulario */
+  main.container { padding-bottom: calc(112px + env(safe-area-inset-bottom)); }
+  form .thumb-actions {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 50;
+    display: grid;
+    grid-template-columns: 1.7fr 1fr;
+    gap: 10px;
+    margin: 0;
+    padding: 10px 16px calc(10px + env(safe-area-inset-bottom));
+    background: var(--card);
+    border-top: 1px solid var(--border);
+    box-shadow: 0 -8px 24px rgba(30, 41, 59, 0.12);
+  }
+  form .thumb-actions .btn { min-height: 54px; width: 100%; }
 }

@@ -1,17 +1,19 @@
-/* RingSize — responsive: 360px, 430px, tablet, desktop. Mobile-first base en App.css. */
+/* RingSize — responsive mobile-first. Base móvil en App.css (0–699px).
+   Aquí solo tablet/desktop: layout centrado con max-width y botones en flujo normal. */
 
-/* 430px: acciones lado a lado (thumb zone inferior) */
-@media (min-width: 430px) {
-  .actions {
-    grid-template-columns: 1fr 1fr;
-  }
+/* 430–699px: datos del resultado en 3 columnas */
+@media (min-width: 430px) and (max-width: 699px) {
   .datos {
     grid-template-columns: repeat(3, 1fr);
   }
 }
 
-/* Tablet >= 700px */
+/* Tablet 700–1023px: contenedor centrado, acciones en posición normal */
 @media (min-width: 700px) {
+  .container {
+    width: min(880px, 94%);
+    padding-inline: 0;
+  }
   .card {
     padding: 1.6rem;
   }
@@ -21,26 +23,18 @@
   .header-inner {
     flex-wrap: nowrap;
   }
-  /* En tablet/desktop las acciones ya no necesitan sticky inferior */
-  .thumb-actions {
-    position: static;
+  form .actions {
+    grid-template-columns: 1fr 1fr;
+  }
+  .datos {
+    grid-template-columns: repeat(3, 1fr);
   }
 }
 
-/* Desktop >= 1024px */
+/* Desktop 1024px o superior */
 @media (min-width: 1024px) {
   .container {
     width: min(880px, 90%);
-  }
-}
-
-/* Sticky thumb-zone en móvil: acciones principales siempre alcanzables */
-@media (max-width: 699px) {
-  .thumb-actions {
-    position: sticky;
-    bottom: 0;
-    background: var(--card);
-    padding: 0.6rem 0;
   }
 }
 

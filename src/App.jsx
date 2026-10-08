@@ -51,15 +51,15 @@ export default function App() {
           <ResultCard result={resultado} />
         </section>
 
+        <section id="ayuda" className="card" aria-labelledby="ayuda-title">
+          <h2 id="ayuda-title">C&#243;mo medir tu anillo</h2>
+          <HelpGuide />
+        </section>
+
         <section id="tabla" className="card" aria-labelledby="tabla-title">
           <h2 id="tabla-title">Tabla de referencia T1&#8211;T36</h2>
           <p className="muted">36 registros: talla, di&#225;metro (mm) y equivalencia USA.</p>
           <SizeTable selectedCode={resultado ? resultado.size : null} />
-        </section>
-
-        <section id="ayuda" className="card" aria-labelledby="ayuda-title">
-          <h2 id="ayuda-title">C&#243;mo medir tu anillo</h2>
-          <HelpGuide />
         </section>
 
         <section id="thumb-zone" className="card" aria-labelledby="thumb-title">
@@ -72,8 +72,8 @@ export default function App() {
           <ul className="small">
             <li>
               <strong>&#8220;Calcular talla&#8221;</strong> y <strong>&#8220;Limpiar&#8221;</strong>:
-              botones grandes (m&#237;n. 44px), a ancho completo en m&#243;vil y en zona
-              inferior del formulario.
+              barra inferior fija en m&#243;vil (botones de 54px, con &#225;rea segura),
+              siempre al alcance del pulgar mientras se hace scroll.
             </li>
             <li>
               <strong>Navegaci&#243;n</strong> (Calculadora / Tabla / C&#243;mo medir): enlaces
