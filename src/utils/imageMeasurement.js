@@ -8,6 +8,32 @@
 export const UNRELIABLE_MESSAGE =
   'No fue posible realizar una medición confiable. Intenta tomar la fotografía desde arriba, con buena iluminación y colocando el anillo junto a una regla.';
 
+export const BLURRY_MESSAGE =
+  'No fue posible realizar una estimación confiable porque la fotografía no tiene suficiente nitidez.';
+
+/**
+ * Nitidez determinística: varianza del Laplaciano sobre grises (0-255).
+ * Heurística calibrada con fotos sintéticas de control (nítidas ≈ 500-2600,
+ * borrosa de control ≈ 106). Umbral 200 con margen ~2x en ambos lados.
+ * NO es una medida científica de precisión; solo decide nítida/borrosa.
+ * Las fotos reales deberán recalibrarlo (documentado como limitación).
+ */
+export const SHARPNESS_THRESHOLD = 200;
+
+export function laplacianVariance(gray, w, h) {
+  let n = 0, mean = 0, m2 = 0;
+  for (let y = 1; y < h - 1; y++) {
+    for (let x = 1; x < w - 1; x++) {
+      const v = gray[(y - 1) * w + x] + gray[y * w + x - 1] - 4 * gray[y * w + x] + gray[y * w + x + 1] + gray[(y + 1) * w + x];
+      n++;
+      const d = v - mean;
+      mean += d / n;
+      m2 += d * (v - mean);
+    }
+  }
+  return n > 0 ? m2 / n : 0;
+}
+
 function dist(a, b) {
   return Math.hypot(a.x - b.x, a.y - b.y);
 }
@@ -72,13 +98,14 @@ export function scaleFromTicks(detection, imgW, imgH) {
       if (dmm < 1) continue;
       const dpx = dist(pts[k], pts[j]);
       if (dpx <= 0) continue;
-      pairs.push({ pxPerMm: dpx / dmm, dmm });
+      pairs.push({ pxPerMm: dpx / dmm, dmm, dpx });
     }
   }
   if (!pairs.length) return null;
   const med = median(pairs.map((p) => p.pxPerMm));
   const dev = Math.max(...pairs.map((p) => Math.abs(p.pxPerMm - med) / med));
-  return { pxPerMm: med, pairs: pairs.length, spread: dev };
+  const spanPx = Math.max(...pairs.map((p) => p.dpx));
+  return { pxPerMm: med, pairs: pairs.length, spread: dev, spanPx };
 }
 
 export function confidenceLevel(aiConfidence, quality) {
@@ -88,30 +115,45 @@ export function confidenceLevel(aiConfidence, quality) {
 }
 
 /**
- * Estimación completa con validación determinística (Alpha 2):
- * 1. coordenadas dentro de la imagen (vía inRange en cada extractor),
- * 2. puntos suficientes (4 extremos o respaldo válido),
- * 3. distancias > 0, 4. referencias métricas válidas (≥2 mm distintos),
- * 5. escala > 0, 6. consistencia entre referencias (spread ≤ 0.5),
- * 7. diámetro razonable, 8. coherencia caja↔puntos y horizontal↔vertical.
- * Si alguna falla: {ok:false} sin talla. Nunca retorna una talla.
+ * Estimación completa con validación determinística (Alpha 2.2):
+ * La escala SOLO proviene de una referencia confirmada por el humano
+ * (options.reference: [{x,y,mm}...] en 0-1000, leída por el usuario en la foto).
+ * Los tick_points de la IA son únicamente una PROPUESTA visual para el overlay
+ * y JAMÁS se usan para calcular. Sin referencia confirmada:
+ * {ok:false, code:'NEEDS_REFERENCE_CONFIRMATION'} — nunca una talla.
+ * Validaciones: 1 coordenadas en imagen, 2 puntos suficientes, 3 distancias>0,
+ * 4 ≥2 mm distintos, 5 escala>0 y tramo≥40px, 6 spread≤0.5, 7 diámetro<100,
+ * 8 elipse≤0.2 y coherencia caja↔puntos≤0.5, 9 nitidez opcional ≥ umbral.
  */
-export function estimateDiameterMm(detection, imgW, imgH) {
+export function estimateDiameterMm(detection, imgW, imgH, options = {}) {
   const warnings = [...(detection?.warnings || [])];
   if (!detection || detection.detected !== true) {
     return { ok: false, code: 'NOT_DETECTED', userMessage: UNRELIABLE_MESSAGE };
   }
+  if (typeof options.sharpness === 'number' && options.sharpness < SHARPNESS_THRESHOLD) {
+    return { ok: false, code: 'BLURRY', userMessage: BLURRY_MESSAGE };
+  }
   if (!(imgW > 0 && imgH > 0)) {
     return { ok: false, code: 'NO_DIMS', userMessage: UNRELIABLE_MESSAGE };
   }
+  // Referencia humana obligatoria: sin ella no hay escala y por tanto no hay talla.
+  const ref = Array.isArray(options.reference) ? options.reference : null;
+  if (!ref || ref.length < 2) {
+    return {
+      ok: false,
+      code: 'NEEDS_REFERENCE_CONFIRMATION',
+      userMessage: 'Confirma en la fotografía los valores de la regla antes de medir.',
+    };
+  }
+  const detectionWithRef = { ...detection, reference: { ...(detection.reference || {}), tick_points: ref } };
   // 2-3. Puntos suficientes y distancias > 0.
   const dia = innerDiameterPx(detection, imgW, imgH);
   if (!dia || !(dia.px >= 20)) {
     return { ok: false, code: 'RING_UNCLEAR', userMessage: UNRELIABLE_MESSAGE };
   }
-  // 4-5. Referencias métricas válidas y escala > 0.
-  const scale = scaleFromTicks(detection, imgW, imgH);
-  if (!scale || !(scale.pxPerMm > 0)) {
+  // 4-5. Escala desde la referencia CONFIRMADA (nunca desde la propuesta de la IA).
+  const scale = scaleFromTicks(detectionWithRef, imgW, imgH);
+  if (!scale || !(scale.pxPerMm > 0) || !(scale.spanPx >= 40)) {
     return { ok: false, code: 'NO_SCALE', userMessage: UNRELIABLE_MESSAGE };
   }
   // 6. Consistencia entre referencias.
@@ -121,12 +163,14 @@ export function estimateDiameterMm(detection, imgW, imgH) {
   if (scale.spread > 0.3) warnings.push('Las marcas de la regla no son consistentes: posible perspectiva o inclinación.');
   if (scale.pairs < 2) warnings.push('Escala basada en un solo par de marcas: verifica el resultado con el calculador manual.');
   // 8a. Coherencia horizontal↔vertical (elipse = perspectiva/inclinación).
+  // Herramienta orientativa: se rechaza desde 20 % (IMG-02 con 25 % daba tallas
+  // claramente erróneas) y se advierte desde 10 %.
   if (dia.verticalPx != null) {
     const ell = Math.abs(dia.horizontalPx - dia.verticalPx) / dia.px;
-    if (ell > 0.4) {
+    if (ell > 0.2) {
       return { ok: false, code: 'ELLIPSE', userMessage: UNRELIABLE_MESSAGE };
     }
-    if (ell > 0.15) warnings.push('El hueco se ve ovalado: posible inclinación de cámara o anillo.');
+    if (ell > 0.1) warnings.push('El hueco se ve ovalado: posible inclinación de cámara o anillo.');
   }
   // 8b. Coherencia caja↔puntos cuando hay ambas fuentes.
   const box = detection?.ring?.inner_box_2d;
@@ -158,6 +202,7 @@ export function estimateDiameterMm(detection, imgW, imgH) {
     diameterMm,
     pixelsPerMm: Math.round(scale.pxPerMm * 100) / 100,
     method: dia.method,
+    referenceSource: 'human-confirmed',
     confidence: typeof detection.confidence === 'number' ? detection.confidence : null,
     level: confidenceLevel(detection.confidence, detection.quality),
     warnings,

@@ -20,8 +20,8 @@ export default function MeasurementResult({ estimate, size }) {
         </div>
       </dl>
       <p className="nota aprox">
-        Estado: estimaci&#243;n aproximada, no una medici&#243;n exacta. Verifica siempre con el
-        calculador manual.
+        Estado: estimaci&#243;n aproximada, no una medici&#243;n exacta. Referencia m&#233;trica
+        verificada por el usuario. Verifica siempre con el calculador manual.
       </p>
       <p className="muted small">
         Confianza de detecci&#243;n: {estimate.level}

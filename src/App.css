@@ -213,6 +213,47 @@ tbody tr.selected { background: #f5f3ff; outline: 2px solid var(--primary); outl
 .beta-preview .btn { width: 100%; }
 .beta-status { font-weight: 700; }
 .beta-result { margin-top: 1rem; }
+.beta-overlay { position: relative; margin: 0.7rem 0; }
+.beta-overlay-img { width: 100%; height: auto; display: block; border-radius: 10px; background: #0f172a; }
+.beta-tick {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  background: #f59e0b;
+  color: #1e293b;
+  font-weight: 800;
+  font-size: 0.85rem;
+  min-width: 28px;
+  min-height: 28px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  border: 2px solid #fff;
+  padding: 0 4px;
+}
+.beta-line { position: absolute; background: #22c55e; box-shadow: 0 0 0 1px #fff; }
+.beta-line-h { height: 3px; }
+.beta-line-v { width: 3px; }
+.beta-point {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  width: 32px; height: 32px;
+  display: grid; place-items: center;
+  border-radius: 50%;
+  font-weight: 900;
+  color: #fff;
+  border: 2px solid #fff;
+}
+.beta-point-a { background: #2563eb; }
+.beta-point-b { background: #db2777; }
+.beta-mmgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.7rem; }
+.beta-mmgrid input {
+  min-height: 52px;
+  font-size: 1.1rem;
+  padding: 0.7rem 0.8rem;
+  border: 2px solid var(--border);
+  border-radius: 10px;
+  width: 100%;
+}
 input[type="file"] {
   min-height: 52px;
   font-size: 1rem;
