@@ -28,24 +28,24 @@ function parseMm(raw) {
   return Number.isFinite(v) && v > 0 ? v : null;
 }
 
-/** Reduce la foto en el navegador (menos peso, sin almacenar nada) y mide su nitidez. */
+/** Prepara la foto para Gemini (menos peso, sin almacenar nada).
+ * La nitidez se mide SIEMPRE sobre la imagen ORIGINAL a tamaño completo,
+ * antes del resize/compress: el pipeline de envío no debe alterar la métrica. */
 function downscale(file) {
   return new Promise((resolve, reject) => {
     const url = URL.createObjectURL(file);
     const img = new Image();
     img.onload = () => {
-      const scale = Math.min(1, MAX_SIDE / Math.max(img.naturalWidth, img.naturalHeight));
-      const w = Math.max(1, Math.round(img.naturalWidth * scale));
-      const h = Math.max(1, Math.round(img.naturalHeight * scale));
-      const canvas = document.createElement('canvas');
-      canvas.width = w;
-      canvas.height = h;
-      const ctx = canvas.getContext('2d');
-      ctx.drawImage(img, 0, 0, w, h);
-      URL.revokeObjectURL(url);
+      const w = Math.max(1, img.naturalWidth);
+      const h = Math.max(1, img.naturalHeight);
       let sharpness = null;
       try {
-        const data = ctx.getImageData(0, 0, w, h).data;
+        const full = document.createElement('canvas');
+        full.width = w;
+        full.height = h;
+        const fctx = full.getContext('2d', { willReadFrequently: true });
+        fctx.drawImage(img, 0, 0, w, h);
+        const data = fctx.getImageData(0, 0, w, h).data;
         const gray = new Float64Array(w * h);
         for (let i = 0; i < w * h; i++) {
           gray[i] = 0.299 * data[i * 4] + 0.587 * data[i * 4 + 1] + 0.114 * data[i * 4 + 2];
@@ -54,6 +54,14 @@ function downscale(file) {
       } catch {
         sharpness = null;
       }
+      const scale = Math.min(1, MAX_SIDE / Math.max(w, h));
+      const rw = Math.max(1, Math.round(w * scale));
+      const rh = Math.max(1, Math.round(h * scale));
+      const canvas = document.createElement('canvas');
+      canvas.width = rw;
+      canvas.height = rh;
+      canvas.getContext('2d').drawImage(img, 0, 0, rw, rh);
+      URL.revokeObjectURL(url);
       resolve({ dataUrl: canvas.toDataURL('image/jpeg', 0.85), sharpness });
     };
     img.onerror = () => {
