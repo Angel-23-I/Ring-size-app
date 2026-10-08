@@ -11,6 +11,7 @@
     "beta:server": "node server/beta-proxy.mjs"
   },
   "dependencies": {
+    "dotenv": "^18.0.6",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },

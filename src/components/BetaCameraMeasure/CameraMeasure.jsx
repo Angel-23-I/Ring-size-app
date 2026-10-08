@@ -4,7 +4,7 @@ import AnalysisStatus from './AnalysisStatus.jsx';
 import MeasurementResult from './MeasurementResult.jsx';
 import ReferenceOverlay from './ReferenceOverlay.jsx';
 import { analyzeImage } from '../../services/geminiMeasurementService.js';
-import { estimateDiameterMm, UNRELIABLE_MESSAGE, laplacianVariance } from '../../utils/imageMeasurement.js';
+import { estimateDiameterMm, UNRELIABLE_MESSAGE, laplacianVariance, SHARPNESS_THRESHOLD, BLURRY_MESSAGE } from '../../utils/imageMeasurement.js';
 import { calculateSize } from '../../utils/ringCalculator.js';
 
 const MAX_FILE_MB = 6;
@@ -17,6 +17,15 @@ function readDims(dataUrl) {
     img.onerror = reject;
     img.src = dataUrl;
   });
+}
+
+/** Parsea un valor en mm (acepta coma decimal). Retorna número o null si inválido. */
+function parseMm(raw) {
+  if (raw == null) return null;
+  const text = String(raw).trim().replace(',', '.');
+  if (!/^\d+(\.\d+)?$/.test(text)) return null;
+  const v = Number(text);
+  return Number.isFinite(v) && v > 0 ? v : null;
 }
 
 /** Reduce la foto en el navegador (menos peso, sin almacenar nada) y mide su nitidez. */
@@ -254,6 +263,11 @@ export default function CameraMeasure() {
             La IA propone estas marcas. Comprueba en la foto que los n&#250;meros coinciden
             con lo impreso en tu regla. Sin esta confirmaci&#243;n no se calcula ninguna talla.
           </p>
+          {typeof sharpnessRef.current === 'number' && sharpnessRef.current < SHARPNESS_THRESHOLD && (
+            <p className="error" role="alert">
+              {BLURRY_MESSAGE} Toma otra fotograf&#237;a con mejor nitidez antes de confirmar.
+            </p>
+          )}
           <ReferenceOverlay
             src={photo}
             ticks={proposal.reference?.tick_points}
@@ -264,7 +278,7 @@ export default function CameraMeasure() {
           />
           {!manual ? (
             <div className="actions">
-              <button type="button" className="btn btn-primary" onClick={onConfirmProposal}>
+              <button type="button" className="btn btn-primary" onClick={onConfirmProposal} disabled={typeof sharpnessRef.current === 'number' && sharpnessRef.current < SHARPNESS_THRESHOLD}>
                 Confirmar referencia y medir
               </button>
               <button type="button" className="btn btn-secondary" onClick={() => { setManual(true); setPoints({ A: null, B: null }); }}>
@@ -285,7 +299,7 @@ export default function CameraMeasure() {
                 </div>
               </div>
               <div className="actions">
-                <button type="button" className="btn btn-primary" onClick={onMeasureManual}>
+                <button type="button" className="btn btn-primary" onClick={onMeasureManual} disabled={typeof sharpnessRef.current === 'number' && sharpnessRef.current < SHARPNESS_THRESHOLD}>
                   Medir con esta referencia
                 </button>
                 <button type="button" className="btn btn-secondary" onClick={() => setManual(false)}>

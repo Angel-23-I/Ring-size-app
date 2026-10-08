@@ -15,6 +15,8 @@
  * Salud: GET /api/beta/health
  */
 import http from 'node:http';
+// Carga .env local (solo servidor; nunca exponer estas variables al frontend).
+import 'dotenv/config';
 
 const PORT = Number(process.env.PORT || 3001);
 const API_KEY = process.env.GEMINI_API_KEY || '';
@@ -102,9 +104,27 @@ const SCHEMA_RING = {
   required: ['detected', 'quality', 'confidence', 'warnings'],
 };
 
-function send(res, code, obj) {
+/**
+ * CORS restrictivo (no '*'): solo orígenes explícitos vía BETA_CORS_ORIGIN
+ * (lista separada por comas). Desarrollo: http://localhost:5173.
+ * Producción (p. ej. Vercel): configurar con el dominio real del frontend.
+ */
+const CORS_ORIGINS = (process.env.BETA_CORS_ORIGIN || 'http://localhost:5173')
+  .split(',')
+  .map((s) => s.trim())
+  .filter(Boolean);
+
+function corsHeaders(req) {
+  const origin = req.headers?.origin;
+  const allowed = origin && CORS_ORIGINS.includes(origin) ? origin : null;
+  const h = { Vary: 'Origin' };
+  if (allowed) h['Access-Control-Allow-Origin'] = allowed;
+  return h;
+}
+
+function send(res, code, obj, extra = {}) {
   const body = JSON.stringify(obj);
-  res.writeHead(code, { 'Content-Type': 'application/json; charset=utf-8', 'Content-Length': Buffer.byteLength(body) });
+  res.writeHead(code, { 'Content-Type': 'application/json; charset=utf-8', 'Content-Length': Buffer.byteLength(body), ...extra });
   res.end(body);
 }
 
@@ -186,8 +206,23 @@ async function analyzeTwoStages(imageB64, mimeType) {
 
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url || '/', 'http://localhost');
+  const cors = corsHeaders(req);
+  // Todas las respuestas /api llevan el origen permitido (sin '*').
+  for (const [k, v] of Object.entries(cors)) res.setHeader(k, v);
+  // Preflight CORS para /api/* (navegadores lo exigen antes del POST con JSON).
+  if (req.method === 'OPTIONS' && url.pathname.startsWith('/api/')) {
+    res.writeHead(204, {
+      ...cors,
+      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type',
+      'Access-Control-Max-Age': '86400',
+      'Content-Length': '0',
+    });
+    res.end();
+    return;
+  }
   if (req.method === 'GET' && url.pathname === '/api/beta/health') {
-    send(res, 200, { ok: true, beta: 'camera-measure', model: MODEL, keyConfigured: Boolean(API_KEY), maxMb: MAX_MB });
+    send(res, 200, { ok: true, beta: 'camera-measure', model: MODEL, keyConfigured: Boolean(API_KEY), maxMb: MAX_MB }, cors);
     return;
   }
   if (req.method === 'POST' && url.pathname === '/api/measure') {
