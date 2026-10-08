@@ -10,7 +10,13 @@ export function getBetaConfig(env = process.env) {
     apiKey: env.GEMINI_API_KEY || '',
     model: env.GEMINI_MODEL || 'gemini-3.5-flash-lite',
     maxMb: Number(env.BETA_MAX_MB || 6),
-    timeoutMs: Number(env.BETA_TIMEOUT_MS || 45000),
+    // Presupuesto global explícito: ninguna petición espera más que esto.
+    // (Se respeta el antiguo BETA_TIMEOUT_MS si existe.)
+    totalTimeoutMs: Number(env.BETA_TOTAL_TIMEOUT_MS || env.BETA_TIMEOUT_MS || 55000),
+    // Timeout independiente por etapa e intento (NO se aumentó el global para "tapar" el problema).
+    stageTimeoutMs: Number(env.BETA_STAGE_TIMEOUT_MS || 25000),
+    // Como máximo UN reintento por etapa, solo transitorios.
+    maxRetries: 1,
     corsOrigins: (env.BETA_CORS_ORIGIN || 'http://localhost:5173')
       .split(',')
       .map((s) => s.trim())
@@ -111,63 +117,133 @@ export function validateMeasureBody(body, maxMb) {
   return { ok: true, image, mimeType };
 }
 
-async function callStage(imageB64, mimeType, prompt, schema, { apiKey, model, timeoutMs }) {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
-  const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), timeoutMs);
+/** Log de instrumentación: tiempos por etapa, sin secretos ni imágenes. */
+function errTag(e) {
+  if (typeof e?.code === 'string') return e.code;
+  if (typeof e?.status === 'number') return e.status;
+  return e?.name || 'error';
+}
+function tlog(event, extra = {}) {
+  const parts = Object.entries(extra).map(([k, v]) => `${k}=${v}`);
+  console.log(`[beta:measure] ${event}${parts.length ? ' ' + parts.join(' ') : ''}`);
+}
+
+function isTransient(e) {
+  if (e?.name === 'AbortError') return true;
+  if (e?.status === 429) return true;
+  if (typeof e?.status === 'number' && e.status >= 500) return true;
+  return false;
+}
+
+async function callStageOnce(imageB64, mimeType, prompt, schema, cfg, signal) {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${cfg.model}:generateContent`;
+  const r = await fetch(url, {
+    method: 'POST',
+    signal,
+    headers: { 'Content-Type': 'application/json', 'x-goog-api-key': cfg.apiKey },
+    body: JSON.stringify({
+      contents: [{ parts: [{ text: prompt }, { inline_data: { mime_type: mimeType, data: imageB64 } }] }],
+      generationConfig: { responseMimeType: 'application/json', responseSchema: schema, maxOutputTokens: 2048, temperature: 0 },
+    }),
+  });
+  const data = await r.json().catch(() => null);
+  if (!r.ok) {
+    const err = new Error(`gemini-${r.status}`);
+    err.status = r.status;
+    err.detail = data?.error?.message || '';
+    throw err;
+  }
+  const text = data?.candidates?.[0]?.content?.parts?.map((p) => p.text || '').join('') || '';
   try {
-    const r = await fetch(url, {
-      method: 'POST',
-      signal: ctrl.signal,
-      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }, { inline_data: { mime_type: mimeType, data: imageB64 } }] }],
-        generationConfig: { responseMimeType: 'application/json', responseSchema: schema, maxOutputTokens: 2048, temperature: 0 },
-      }),
-    });
-    const data = await r.json().catch(() => null);
-    if (!r.ok) {
-      const err = new Error(`gemini-${r.status}`);
-      err.status = r.status;
-      err.detail = data?.error?.message || '';
-      throw err;
-    }
-    const text = data?.candidates?.[0]?.content?.parts?.map((p) => p.text || '').join('') || '';
-    try {
-      return JSON.parse(text);
-    } catch {
-      const err = new Error('bad-json');
-      err.status = 502;
-      err.code = 'INVALID_AI_JSON';
-      throw err;
-    }
-  } finally {
-    clearTimeout(t);
+    return JSON.parse(text);
+  } catch {
+    const err = new Error('bad-json');
+    err.status = 502;
+    err.code = 'INVALID_AI_JSON';
+    throw err;
   }
 }
 
-/** Dos etapas enfocadas; combina en una detección. La talla NUNCA se calcula aquí. */
-export async function analyzeTwoStages(imageB64, mimeType, cfg) {
-  const ruler = await callStage(imageB64, mimeType, PROMPT_RULER, SCHEMA_RULER, cfg);
-  const ring = await callStage(imageB64, mimeType, PROMPT_RING, SCHEMA_RING, cfg);
-  if (typeof ruler?.detected !== 'boolean' || typeof ring?.detected !== 'boolean') {
-    const err = new Error('bad-shape');
-    err.status = 502;
-    err.code = 'INVALID_AI_RESPONSE';
-    throw err;
+/**
+ * Una etapa con timeout propio y COMO MÁXIMO un reintento solo ante errores
+ * transitorios (timeout, 429, 5xx). Los funcionales (4xx, JSON inválido,
+ * forma inválida) no se reintentan.
+ */
+async function callStageWithRetry(tag, imageB64, mimeType, prompt, schema, cfg, globalSignal) {
+  let attempt = 0;
+  for (;;) {
+    attempt += 1;
+    if (globalSignal.aborted) {
+      const err = new Error('global-budget');
+      err.name = 'AbortError';
+      throw err;
+    }
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), cfg.stageTimeoutMs);
+    const combined = globalSignal.aborted
+      ? ctrl.signal
+      : AbortSignal.any([ctrl.signal, globalSignal]);
+    const t0 = Date.now();
+    tlog('stage-start', { stage: tag, attempt });
+    try {
+      const out = await callStageOnce(imageB64, mimeType, prompt, schema, cfg, combined);
+      tlog('stage-end', { stage: tag, attempt, ms: Date.now() - t0, result: 'ok' });
+      return out;
+    } catch (e) {
+      tlog('stage-end', { stage: tag, attempt, ms: Date.now() - t0, result: errTag(e) });
+      const canRetry = attempt <= cfg.maxRetries && isTransient(e) && !globalSignal.aborted;
+      if (!canRetry) throw e;
+      tlog('stage-retry', { stage: tag, nextAttempt: attempt + 1, cause: e?.status || e?.name });
+    } finally {
+      clearTimeout(timer);
+    }
   }
-  const qualities = [ruler.quality, ring.quality].filter(Boolean);
-  const worst = qualities.includes('poor') ? 'poor' : qualities.includes('fair') ? 'fair' : 'good';
-  const confs = [ruler.confidence, ring.confidence].filter((v) => typeof v === 'number');
-  return {
-    detected: ruler.detected && ring.detected,
-    quality: worst,
-    ring: ring.ring || {},
-    reference: ruler.reference || { type: 'unknown', tick_points: [] },
-    confidence: confs.length ? Math.min(...confs) : null,
-    warnings: [...(ruler.warnings || []), ...(ring.warnings || [])],
-    stages: { ruler: ruler.detected, ring: ring.detected },
-  };
+}
+
+/**
+ * Dos etapas enfocadas; combina en una detección. La talla NUNCA se calcula aquí.
+ *
+ * Las etapas son INDEPENDIENTES (cada una usa solo la imagen + su propio
+ * prompt/esquema), por lo que se ejecutan en paralelo: el total tiende a
+ * max(etapa1, etapa2) en lugar de la suma.
+ */
+export async function analyzeTwoStages(imageB64, mimeType, cfg) {
+  const t0 = Date.now();
+  tlog('request-start', { model: cfg.model, mime: mimeType, bytes: imageB64.length });
+  const globalCtrl = new AbortController();
+  const globalTimer = setTimeout(() => globalCtrl.abort(), cfg.totalTimeoutMs);
+  try {
+    const [ruler, ring] = await Promise.all([
+      callStageWithRetry('ruler', imageB64, mimeType, PROMPT_RULER, SCHEMA_RULER, cfg, globalCtrl.signal),
+      callStageWithRetry('ring', imageB64, mimeType, PROMPT_RING, SCHEMA_RING, cfg, globalCtrl.signal),
+    ]);
+    if (typeof ruler?.detected !== 'boolean' || typeof ring?.detected !== 'boolean') {
+      const err = new Error('bad-shape');
+      err.status = 502;
+      err.code = 'INVALID_AI_RESPONSE';
+      throw err;
+    }
+    const qualities = [ruler.quality, ring.quality].filter(Boolean);
+    const worst = qualities.includes('poor') ? 'poor' : qualities.includes('fair') ? 'fair' : 'good';
+    const confs = [ruler.confidence, ring.confidence].filter((v) => typeof v === 'number');
+    tlog('combine', { ms: Date.now() - t0 });
+    const out = {
+      detected: ruler.detected && ring.detected,
+      quality: worst,
+      ring: ring.ring || {},
+      reference: ruler.reference || { type: 'unknown', tick_points: [] },
+      confidence: confs.length ? Math.min(...confs) : null,
+      warnings: [...(ruler.warnings || []), ...(ring.warnings || [])],
+      stages: { ruler: ruler.detected, ring: ring.detected },
+    };
+    tlog('request-end', { ms: Date.now() - t0, result: 'ok' });
+    return out;
+  } catch (e) {
+    tlog('request-end', { ms: Date.now() - t0, result: errTag(e) });
+    throw e;
+  } finally {
+    clearTimeout(globalTimer);
+  }
 }
 
 /** Mapea errores del pipeline a {status, code, message} para el cliente. */
