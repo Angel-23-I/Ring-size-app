@@ -4,7 +4,7 @@ import AnalysisStatus from './AnalysisStatus.jsx';
 import MeasurementResult from './MeasurementResult.jsx';
 import ReferenceOverlay from './ReferenceOverlay.jsx';
 import { analyzeImage } from '../../services/geminiMeasurementService.js';
-import { estimateDiameterMm, UNRELIABLE_MESSAGE, laplacianVariance, SHARPNESS_THRESHOLD, BLURRY_MESSAGE } from '../../utils/imageMeasurement.js';
+import { estimateDiameterMm, UNRELIABLE_MESSAGE, laplacianVariance, SHARPNESS_THRESHOLD, BLURRY_MESSAGE, BLURRY_ADVISORY } from '../../utils/imageMeasurement.js';
 import { calculateSize } from '../../utils/ringCalculator.js';
 
 const MAX_FILE_MB = 6;
@@ -271,51 +271,65 @@ export default function CameraMeasure() {
             La IA propone estas marcas. Comprueba en la foto que los n&#250;meros coinciden
             con lo impreso en tu regla. Sin esta confirmaci&#243;n no se calcula ninguna talla.
           </p>
-          {typeof sharpnessRef.current === 'number' && sharpnessRef.current < SHARPNESS_THRESHOLD && (
-            <p className="error" role="alert">
-              {BLURRY_MESSAGE} Toma otra fotograf&#237;a con mejor nitidez antes de confirmar.
-            </p>
-          )}
-          <ReferenceOverlay
-            src={photo}
-            ticks={proposal.reference?.tick_points}
-            ring={proposal.ring}
-            manual={manual}
-            points={points}
-            onPick={onPick}
-          />
-          {!manual ? (
-            <div className="actions">
-              <button type="button" className="btn btn-primary" onClick={onConfirmProposal} disabled={typeof sharpnessRef.current === 'number' && sharpnessRef.current < SHARPNESS_THRESHOLD}>
-                Confirmar referencia y medir
-              </button>
-              <button type="button" className="btn btn-secondary" onClick={() => { setManual(true); setPoints({ A: null, B: null }); }}>
-                Corregir manualmente
-              </button>
-            </div>
-          ) : (
-            <div>
-              <p className="muted small">Toca dos marcas visibles (A y B) y escribe el valor en mm que lees en cada una.</p>
-              <div className="beta-mmgrid">
-                <div className="form-group">
-                  <label htmlFor="beta-mm-a">Marca A (mm)</label>
-                  <input id="beta-mm-a" type="text" inputMode="decimal" value={mmA} onChange={(e) => setMmA(e.target.value)} placeholder="Ej.: 10" />
-                </div>
-                <div className="form-group">
-                  <label htmlFor="beta-mm-b">Marca B (mm)</label>
-                  <input id="beta-mm-b" type="text" inputMode="decimal" value={mmB} onChange={(e) => setMmB(e.target.value)} placeholder="Ej.: 20" />
-                </div>
-              </div>
-              <div className="actions">
-                <button type="button" className="btn btn-primary" onClick={onMeasureManual} disabled={typeof sharpnessRef.current === 'number' && sharpnessRef.current < SHARPNESS_THRESHOLD}>
-                  Medir con esta referencia
-                </button>
-                <button type="button" className="btn btn-secondary" onClick={() => setManual(false)}>
-                  Volver a la propuesta
-                </button>
-              </div>
-            </div>
-          )}
+          {(() => {
+            const blurry = typeof sharpnessRef.current === 'number' && sharpnessRef.current < SHARPNESS_THRESHOLD;
+            const ticks = proposal.reference?.tick_points;
+            const hasProposal = Array.isArray(ticks) && ticks.length >= 2;
+            return (
+              <>
+                {blurry && hasProposal && (
+                  <p className="nota aprox" role="note">
+                    {BLURRY_ADVISORY}
+                  </p>
+                )}
+                {blurry && !hasProposal && (
+                  <p className="error" role="alert">
+                    {BLURRY_MESSAGE} Toma otra fotograf&#237;a con mejor nitidez antes de confirmar.
+                  </p>
+                )}
+                <ReferenceOverlay
+                  src={photo}
+                  ticks={ticks}
+                  ring={proposal.ring}
+                  manual={manual}
+                  points={points}
+                  onPick={onPick}
+                />
+                {!manual ? (
+                  <div className="actions">
+                    <button type="button" className="btn btn-primary" onClick={onConfirmProposal} disabled={!hasProposal}>
+                      Confirmar referencia y medir
+                    </button>
+                    <button type="button" className="btn btn-secondary" onClick={() => { setManual(true); setPoints({ A: null, B: null }); }}>
+                      Corregir manualmente
+                    </button>
+                  </div>
+                ) : (
+                  <div>
+                    <p className="muted small">Toca dos marcas visibles (A y B) y escribe el valor en mm que lees en cada una.</p>
+                    <div className="beta-mmgrid">
+                      <div className="form-group">
+                        <label htmlFor="beta-mm-a">Marca A (mm)</label>
+                        <input id="beta-mm-a" type="text" inputMode="decimal" value={mmA} onChange={(e) => setMmA(e.target.value)} placeholder="Ej.: 10" />
+                      </div>
+                      <div className="form-group">
+                        <label htmlFor="beta-mm-b">Marca B (mm)</label>
+                        <input id="beta-mm-b" type="text" inputMode="decimal" value={mmB} onChange={(e) => setMmB(e.target.value)} placeholder="Ej.: 20" />
+                      </div>
+                    </div>
+                    <div className="actions">
+                      <button type="button" className="btn btn-primary" onClick={onMeasureManual}>
+                        Medir con esta referencia
+                      </button>
+                      <button type="button" className="btn btn-secondary" onClick={() => setManual(false)}>
+                        Volver a la propuesta
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </>
+            );
+          })()}
         </div>
       )}
       <MeasurementResult estimate={estimate} size={size} />

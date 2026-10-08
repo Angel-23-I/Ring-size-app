@@ -4,7 +4,10 @@
  * estructurada. La talla se calcula después con ringCalculator.js + tabla T1-T36.
  */
 
-const API_URL = ((import.meta.env && import.meta.env.VITE_BETA_API_URL) || 'http://localhost:3001').replace(/\/$/, '');
+const ENV_URL = import.meta.env && import.meta.env.VITE_BETA_API_URL;
+// Base del backend: mismo origen en dev (proxy Vite → localhost:3001) y en
+// producción (/api de Vercel). Solo se usa URL absoluta si se configura explícitamente.
+const API_URL = (ENV_URL || '').replace(/\/$/, '');
 
 const FRIENDLY = {
   NO_IMAGE: 'No se recibió ninguna imagen. Selecciona una foto e intenta de nuevo.',

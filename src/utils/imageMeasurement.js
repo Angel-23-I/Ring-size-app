@@ -11,6 +11,12 @@ export const UNRELIABLE_MESSAGE =
 export const BLURRY_MESSAGE =
   'No fue posible realizar una estimación confiable porque la fotografía no tiene suficiente nitidez.';
 
+/** Aviso cuando la nitidez es limitada pero hay referencia confirmada: se puede
+ * continuar solo porque el humano verificó la referencia; el resultado sigue
+ * siendo una estimación aproximada. */
+export const BLURRY_ADVISORY =
+  '⚠️ La fotografía tiene nitidez limitada. Verifica cuidadosamente que las marcas propuestas coincidan con los valores impresos en tu regla. Si coinciden, puedes confirmar la referencia para continuar. El resultado seguirá siendo una estimación aproximada.';
+
 /**
  * Nitidez determinística: varianza del Laplaciano sobre grises (0-255).
  * Heurística calibrada con fotos sintéticas de control (nítidas ≈ 500-2600,
@@ -124,14 +130,14 @@ export function confidenceLevel(aiConfidence, quality) {
  * Validaciones: 1 coordenadas en imagen, 2 puntos suficientes, 3 distancias>0,
  * 4 ≥2 mm distintos, 5 escala>0 y tramo≥40px, 6 spread≤0.5, 7 diámetro<100,
  * 8 elipse≤0.2 y coherencia caja↔puntos≤0.5, 9 nitidez opcional ≥ umbral.
+ * La nitidez (9) es validación de calidad, NO bloqueo absoluto: si hay
+ * referencia confirmada válida, se advierte (BLURRY_ADVISORY) y la confirmación
+ * humana autoriza el cálculo; sin referencia válida, lo borroso bloquea (BLURRY).
  */
 export function estimateDiameterMm(detection, imgW, imgH, options = {}) {
   const warnings = [...(detection?.warnings || [])];
   if (!detection || detection.detected !== true) {
     return { ok: false, code: 'NOT_DETECTED', userMessage: UNRELIABLE_MESSAGE };
-  }
-  if (typeof options.sharpness === 'number' && options.sharpness < SHARPNESS_THRESHOLD) {
-    return { ok: false, code: 'BLURRY', userMessage: BLURRY_MESSAGE };
   }
   if (!(imgW > 0 && imgH > 0)) {
     return { ok: false, code: 'NO_DIMS', userMessage: UNRELIABLE_MESSAGE };
@@ -145,17 +151,21 @@ export function estimateDiameterMm(detection, imgW, imgH, options = {}) {
       userMessage: 'Confirma en la fotografía los valores de la regla antes de medir.',
     };
   }
+  const blurry = typeof options.sharpness === 'number' && options.sharpness < SHARPNESS_THRESHOLD;
   const detectionWithRef = { ...detection, reference: { ...(detection.reference || {}), tick_points: ref } };
   // 2-3. Puntos suficientes y distancias > 0.
   const dia = innerDiameterPx(detection, imgW, imgH);
   if (!dia || !(dia.px >= 20)) {
-    return { ok: false, code: 'RING_UNCLEAR', userMessage: UNRELIABLE_MESSAGE };
+    return { ok: false, code: blurry ? 'BLURRY' : 'RING_UNCLEAR', userMessage: blurry ? BLURRY_MESSAGE : UNRELIABLE_MESSAGE };
   }
   // 4-5. Escala desde la referencia CONFIRMADA (nunca desde la propuesta de la IA).
   const scale = scaleFromTicks(detectionWithRef, imgW, imgH);
   if (!scale || !(scale.pxPerMm > 0) || !(scale.spanPx >= 40)) {
-    return { ok: false, code: 'NO_SCALE', userMessage: UNRELIABLE_MESSAGE };
+    return { ok: false, code: blurry ? 'BLURRY' : 'NO_SCALE', userMessage: blurry ? BLURRY_MESSAGE : UNRELIABLE_MESSAGE };
   }
+  // 9. Nitidez limitada + referencia válida: advertir, no bloquear. La confirmación
+  // humana ya autoriza el uso de esta referencia.
+  if (blurry) warnings.push(BLURRY_ADVISORY);
   // 6. Consistencia entre referencias.
   if (scale.spread > 0.5) {
     return { ok: false, code: 'INCONSISTENT_SCALE', userMessage: UNRELIABLE_MESSAGE };

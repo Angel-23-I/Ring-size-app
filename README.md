@@ -110,3 +110,13 @@ Módulo experimental y aislado ("Medición con cámara — BETA") que estima el 
 - **Requisitos Beta:** `cp .env.example .env` + clave, `npm run beta:server` (puerto 3001), frontend con `VITE_BETA_API_URL` si cambia el puerto.
 - **Desactivar:** `VITE_BETA_ENABLED=false` (la sección no se renderiza) o no iniciar el proxy.
 - **Por qué es aproximado:** la IA solo localiza píxeles; la escala depende de la foto y la geometría se degrada con perspectiva e inclinación.
+
+## Despliegue en Vercel (Beta)
+
+Arquitectura de producción: `React/Vite → Vercel → /api/measure (serverless) → Gemini`. Sin servidor Node persistente.
+
+1. Subir el repo a GitHub (verificar que `.env` NO se sube; solo `.env.example`).
+2. Importar en Vercel (framework Vite; build `npm run build`, salida `dist`).
+3. Dashboard → Settings → Environment Variables: `GEMINI_API_KEY` (secreto, solo servidor), `GEMINI_MODEL=gemini-3.5-flash-lite`, `BETA_CORS_ORIGIN=https://tu-app.vercel.app`.
+4. Deploy: el frontend llama a `/api/measure` del mismo origen (`api/measure.js`); en local `npm run dev` redirige `/api` a `localhost:3001` vía `vite.config.js`, por lo que el código es idéntico.
+5. Probar en producción: manual 18.1→T17 y Beta con foto+regla; revisar Functions Logs ante errores (429/5xx de Gemini).
