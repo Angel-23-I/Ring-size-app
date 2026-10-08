@@ -4,9 +4,13 @@ import SizeForm from './components/SizeForm.jsx';
 import ResultCard from './components/ResultCard.jsx';
 import SizeTable from './components/SizeTable.jsx';
 import HelpGuide from './components/HelpGuide.jsx';
+import CameraMeasure from './components/BetaCameraMeasure/CameraMeasure.jsx';
 import { calculateSize } from './utils/ringCalculator.js';
 import './App.css';
 import './styles/responsive.css';
+
+/** Módulo experimental aislado: se oculta con VITE_BETA_ENABLED=false. */
+const BETA_ENABLED = import.meta.env.VITE_BETA_ENABLED !== 'false';
 
 export default function App() {
   const [diametro, setDiametro] = useState('');
@@ -85,6 +89,19 @@ export default function App() {
             </li>
           </ul>
         </section>
+
+        {BETA_ENABLED && (
+          <section id="beta" className="card beta-card" aria-labelledby="beta-title">
+            <h2 id="beta-title">
+              Medici&#243;n con c&#225;mara <span className="beta-tag">BETA</span>
+            </h2>
+            <p className="muted">
+              Funci&#243;n experimental y aproximada: estima el di&#225;metro desde una foto del
+              anillo junto a una regla. El calculador manual sigue siendo la v&#237;a principal.
+            </p>
+            <CameraMeasure />
+          </section>
+        )}
       </main>
 
       <footer className="site-footer">

@@ -7,7 +7,8 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "beta:server": "node server/beta-proxy.mjs"
   },
   "dependencies": {
     "react": "^19.0.0",

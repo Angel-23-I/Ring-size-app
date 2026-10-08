@@ -15,6 +15,7 @@ export default function Header() {
           <a href="#calculadora">Calculadora</a>
           <a href="#tabla">Tabla</a>
           <a href="#ayuda">C&#243;mo medir</a>
+          <a href="#beta">Beta</a>
         </nav>
       </div>
     </header>

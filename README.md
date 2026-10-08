@@ -95,3 +95,18 @@ Ajuste respecto al esquema base: se eliminó `src/index.css` y la lógica antigu
 ## Uso
 
 Campo con `label` visible, `placeholder`, unidad `mm` e `inputmode="decimal"` para teclado numérico en móvil. Errores claros en español para: vacío, no numérico, valor <= 0, más de 2 decimales, inferior a T1, superior a T36.
+
+## Alpha/Beta — Medición asistida por IA
+
+Módulo experimental y aislado ("Medición con cámara — BETA") que estima el diámetro desde una foto del anillo junto a una regla. El calculador manual sigue siendo la vía principal y no fue modificado.
+
+- **Objetivo:** demostración académica de medición aproximada con visión por IA.
+- **Funcionamiento:** foto (galería o cámara, `accept="image/*" capture="environment"`) → proxy local → Gemini (solo detección: hueco interior + marcas de regla en 0–1000, calidad, advertencias) → cálculo local píxeles→mm → `ringCalculator.js` → tabla T1–T36. Resultado etiquetado "Estimación aproximada mediante fotografía asistida por IA". Sin detección o escala válida no hay talla.
+- **Arquitectura:** `React → POST /api/measure (server/beta-proxy.mjs) → Gemini generateContent → detección JSON → imageMeasurement.js → ringCalculator.js → ringSizes.js`. Sin SDK en cliente; proxy Node sin dependencias.
+- **Gemini:** modelo configurable (`GEMINI_MODEL`, defecto `gemini-2.5-flash`: multimodal con detección de objetos, rápido, económico, con Free Tier con límites RPM/RPD/TPM que varían — ver AI Studio; no es ilimitado). Entrada inline base64 (< 20 MB total), `responseMimeType: application/json` + `responseSchema`. Coordenadas 0–1000 según documentación oficial de object detection.
+- **Seguridad:** `GEMINI_API_KEY` solo en el servidor (`.env`, ignorado por Git). El bundle no contiene la clave ni llamadas directas a Google (verificado). `.env.example` incluido.
+- **Flujo de medición:** mediana de px/mm entre pares de marcas (tolerancia de perspectiva 30 %), diámetro desde par de puntos o promedio de caja, compuertas de calidad; coma/validación reutilizan el núcleo.
+- **Limitaciones:** aproximado por naturaleza (perspectiva, inclinación, luz, reflejos, blur); requiere regla legible en el mismo plano; sin foto válida no estima; la confianza es de detección, no precisión científica; Free Tier con cuotas y posible uso de datos para mejora de productos (plan gratuito).
+- **Requisitos Beta:** `cp .env.example .env` + clave, `npm run beta:server` (puerto 3001), frontend con `VITE_BETA_API_URL` si cambia el puerto.
+- **Desactivar:** `VITE_BETA_ENABLED=false` (la sección no se renderiza) o no iniciar el proxy.
+- **Por qué es aproximado:** la IA solo localiza píxeles; la escala depende de la foto y la geometría se degrada con perspectiva e inclinación.
